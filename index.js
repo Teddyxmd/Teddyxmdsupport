@@ -8,9 +8,9 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
-app.use(cors({origin: "*"})); // FIX 1: Allow all
+app.use(cors({origin: "*"}));
 app.use(express.json({limit: '10mb'}));
-app.use(express.urlencoded({ extended: true })); // FIX 2: ADD THIS - THIS WAS THE BUG
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
 const CONFIG = {
@@ -19,8 +19,8 @@ const CONFIG = {
     MONGO_URI: process.env.MONGO_URI,
     BOT_TOKEN: process.env.BOT_TOKEN,
     ADMIN_IDS: process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',') : [],
-    OUTLOOK_EMAIL: process.env.OUTLOOK_EMAIL,
-    OUTLOOK_PASS: process.env.OUTLOOK_PASS,
+    OUTLOOK_EMAIL: process.env.OUTLOOK_EMAIL, // USE GMAIL HERE NOW
+    OUTLOOK_PASS: process.env.OUTLOOK_PASS,   // USE GMAIL APP PASSWORD
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
 };
 
@@ -44,10 +44,10 @@ const ticketSchema = new mongoose.Schema({
 });
 const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', ticketSchema);
 
+// FIX 1: CHANGED TO GMAIL - OUTLOOK TIMES OUT ON RENDER
 const transporter = nodemailer.createTransport({
-    host: 'smtp.office365.com', port: 587, secure: false,
+    service: 'gmail',
     auth: { user: CONFIG.OUTLOOK_EMAIL, pass: CONFIG.OUTLOOK_PASS },
-    tls: { ciphers: 'SSLv3' }
 });
 
 async function generateTicketID() {
@@ -56,9 +56,10 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
+// FIX 2: CHANGED TO gemini-2.0-flash - 1.5 is deprecated
 async function generateAIReply(name, userMessage, ticketID) {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. 
         Ticket ID: ${ticketID}. Reply in 3-4 sentences. Be helpful, kind, and professional. Always mention ticket ID.
         Customer Name: ${name}, Message: "${userMessage}". Sign off as ${CONFIG.COMPANY_NAME} Support Team.`;
@@ -74,7 +75,7 @@ app.get('/health', (req, res) => res.status(200).json({status: 'OK', service: 'T
 
 app.post('/api/support', async (req, res) => {
     await dbConnect();
-    console.log("RECEIVED BODY:", req.body); // FIX 3: Added log to debug
+    console.log("RECEIVED BODY:", req.body);
     const { name, email, message } = req.body;
     if(!name || !email || !message) return res.status(400).json({success: false, error: `All fields required. Got: ${JSON.stringify(req.body)}`});
     try {
@@ -83,12 +84,15 @@ app.post('/api/support', async (req, res) => {
         const aiReply = await generateAIReply(name, message, ticketID);
         await new Ticket({ ticketID, name, email, message, aiReply, ip }).save();
 
-        await transporter.sendMail({
-            from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
-            to: email,
-            subject: `[${ticketID}] We received your message`,
-            html: `<div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5"><div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4"><h2 style="color:#0078D4">Hi ${name},</h2><p><b>Ticket ID: ${ticketID}</b></p><p>Thanks for contacting <b>${CONFIG.COMPANY_NAME}</b>!</p><div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">${aiReply.replace(/\n/g, '<br>')}</div><p>Reply to this email and include ${ticketID} to continue.</p><hr><p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME}</p></div></div>`
-        }).catch(e=>console.error("Email Failed:", e.message));
+        // FIX 3: SEND EMAIL IN BACKGROUND SO IT DOESN'T BLOCK
+        setTimeout(() => {
+            transporter.sendMail({
+                from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
+                to: email,
+                subject: `[${ticketID}] We received your message`,
+                html: `<div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5"><div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4"><h2 style="color:#0078D4">Hi ${name},</h2><p><b>Ticket ID: ${ticketID}</b></p><p>Thanks for contacting <b>${CONFIG.COMPANY_NAME}</b>!</p><div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">${aiReply.replace(/\n/g, '<br>')}</div><p>Reply to this email and include ${ticketID} to continue.</p><hr><p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME}</p></div></div>`
+            }).catch(e=>console.error("Email Failed:", e.message));
+        }, 100);
 
         const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n*AI Reply:*\n${aiReply}`;
         for(let chatId of CONFIG.ADMIN_IDS){
