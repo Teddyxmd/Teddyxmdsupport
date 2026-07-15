@@ -12,7 +12,7 @@ Features: Gemini AI auto-reply + Email + Telegram Alerts + Admin Panel + MongoDB
 
 ### **🚀 1-CLICK DEPLOY TO RENDER**
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/YOUR_USERNAME/teddy-xmd-support)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Teddyxmd/teddyxmdsupport)
 
 Click the button above, connect Github, and fill 6 env vars. Done in 2 minutes.
 
