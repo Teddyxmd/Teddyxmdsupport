@@ -1,0 +1,37 @@
+services:
+    - type: web
+    name: teddy-xmd-support
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+            - key: NODE_ENV
+        value: production
+            - key: PORT
+        value: 50900
+            - key: COMPANY_NAME
+        value: TEDDY-XMD Support
+      
+      # FILL THESE IN RENDER DASHBOARD AFTER FIRST DEPLOY
+            - key: ADMIN_KEY
+        sync: false
+            - key: MONGO_URI
+        sync: false
+            - key: BOT_TOKEN
+        sync: false
+            - key: ADMIN_IDS
+        value: 6815918612
+            - key: OUTLOOK_EMAIL
+        sync: false
+            - key: OUTLOOK_PASS
+        sync: false
+            - key: GEMINI_API_KEY
+        sync: false
+
+# To add custom domain later: support.teddyxmd.com
+# Go to Render > Settings > Custom Domain > Add Domain
