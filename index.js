@@ -8,8 +8,9 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+app.use(cors({origin: "*"})); // FIX 1: Allow all
 app.use(express.json({limit: '10mb'}));
+app.use(express.urlencoded({ extended: true })); // FIX 2: ADD THIS - THIS WAS THE BUG
 app.use(express.static('public'));
 
 const CONFIG = {
@@ -25,7 +26,6 @@ const CONFIG = {
 
 const genAI = new GoogleGenerativeAI(CONFIG.GEMINI_API_KEY);
 
-// MongoDB cache for serverless
 let cached = global.mongoose;
 if (!cached) cached = global.mongoose = { conn: null, promise: null };
 async function dbConnect() {
@@ -44,7 +44,6 @@ const ticketSchema = new mongoose.Schema({
 });
 const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', ticketSchema);
 
-// Outlook SMTP - 535 FIX: Must use App Password
 const transporter = nodemailer.createTransport({
     host: 'smtp.office365.com', port: 587, secure: false,
     auth: { user: CONFIG.OUTLOOK_EMAIL, pass: CONFIG.OUTLOOK_PASS },
@@ -71,13 +70,13 @@ async function generateAIReply(name, userMessage, ticketID) {
     }
 }
 
-// HEALTHCHECK for Render
 app.get('/health', (req, res) => res.status(200).json({status: 'OK', service: 'TEDDY-XMD Support'}));
 
 app.post('/api/support', async (req, res) => {
     await dbConnect();
+    console.log("RECEIVED BODY:", req.body); // FIX 3: Added log to debug
     const { name, email, message } = req.body;
-    if(!name || !email || !message) return res.status(400).json({success: false, error: 'All fields required'});
+    if(!name || !email || !message) return res.status(400).json({success: false, error: `All fields required. Got: ${JSON.stringify(req.body)}`});
     try {
         const ticketID = await generateTicketID();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
