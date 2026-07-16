@@ -6,7 +6,7 @@ services:
     region: oregon
     branch: main
     buildCommand: npm install
-    startCommand: node server.js
+    startCommand: node index.js  # <-- CHANGED
     autoDeploy: true
     healthCheckPath: /
     
@@ -15,25 +15,17 @@ services:
         value: production
             - key: PORT
         value: 50900
-      
             - key: COMPANY_NAME
         value: TEDDY-XMD Support
-      
             - key: ADMIN_KEY
-        generateValue: true # Render will auto-generate a strong random key
-      
+        generateValue: true
             - key: MONGO_URI
-        sync: false # YOU MUST FILL THIS IN RENDER DASHBOARD
-      
+        sync: false
             - key: BOT_TOKEN
-        sync: false # YOU MUST FILL THIS IN RENDER DASHBOARD
-      
+        sync: false
             - key: ADMIN_IDS
-        sync: false # YOU MUST FILL THIS IN RENDER DASHBOARD
-        # example: 6815918612,123456789
-      
+        sync: false
             - key: OUTLOOK_EMAIL
-        sync: false # YOU MUST FILL THIS IN RENDER DASHBOARD
-      
+        sync: false
             - key: OUTLOOK_PASS
-        sync: false # YOU MUST FILL THIS IN RENDER DASHBOARD
+        sync: false
