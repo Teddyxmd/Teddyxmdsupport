@@ -1,9 +1,8 @@
-
 # 📞 TEDDY-XMD Support System
 
 Official AI-powered support ticket system for **TEDDY-XMD WhatsApp Bot**.
 
-Features: Gemini AI auto-reply + Email + Telegram Alerts + Admin Panel + MongoDB
+Features: Email + Telegram Alerts + Admin Panel + MongoDB
 
 ![Status](https://img.shields.io/badge/status-Production-25D366)
 ![Node](https://img.shields.io/badge/Node-18+-0078D4)
@@ -20,13 +19,12 @@ Click the button above, connect Github, and fill 6 env vars. Done in 2 minutes.
 
 ### **📁 PROJECT STRUCTURE**
 teddy-xmd-support/
-├── render.yml              # Render blueprint config + healthcheck
-├── index.js                # Main Express server + API + Admin
+├── server.js               # Main Express server + API + Admin
 ├── package.json            # Dependencies
 ├── .env.example            # Env template
 ├── .gitignore              # Ignore .env and node_modules
 └── public/
-    └── support.html        # Official customer support form
+    └── support.html        # Official customer support form with BG + Channels
 
 ---
 
@@ -34,13 +32,14 @@ teddy-xmd-support/
 
 | Feature | Description |
 | --- | --- |
-| **AI Auto Reply** | Gemini 1.5 Flash replies instantly with ticket ID |
-| **Email System** | Outlook SMTP sends professional confirmation email |
+| **Instant Ticket** | User gets ticket ID immediately, no waiting |
+| **Email System** | Gmail SMTP sends professional confirmation email |
 | **Telegram Alerts** | Instant notification to admins when new ticket comes |
-| **Admin Panel** | `/admin?key=YOUR_KEY` to view and close tickets |
+| **Admin Panel** | `/admin?key=YOUR_KEY` to view and close tickets. Green UI |
 | **MongoDB** | All tickets saved with IP, time, status |
-| **Healthcheck** | `/health` endpoint for Render monitoring |
-| **Responsive UI** | Mobile-first branded support form |
+| **Background Image** | Branded support form with your image |
+| **Channel Buttons** | WhatsApp + Telegram channel join buttons |
+| **Fire-and-Forget** | Email/Telegram run in background so user doesn't wait |
 
 ---
 
@@ -61,10 +60,8 @@ MONGO_URI=mongodb+srv://...
 BOT_TOKEN=from_BotFather
 ADMIN_IDS=6815918612
 
-OUTLOOK_EMAIL=teddyxmd@hotmail.com
+OUTLOOK_EMAIL=your_gmail@gmail.com
 OUTLOOK_PASS=App_Password_Not_Normal_Password
-
-GEMINI_API_KEY=from_AI_Studio
 #### *3. Run Locally*
 npm run dev
 Open: `http://localhost:50900`  
@@ -78,13 +75,12 @@ Method	Endpoint	Description
 `POST`	`/api/support`	Create new ticket
 `GET`	`/admin?key=KEY`	Admin dashboard
 `POST`	`/api/close-ticket`	Close a ticket
-`GET`	`/health`	Healthcheck for Render
 ---
 
 ### *🔐 SECURITY NOTES*
 1.  *Never commit `.env`* - Use Render Environment Variables
-2.  *Rotate keys* if you leaked them: MongoDB, Telegram, Gemini, Outlook
-3.  *Outlook*: Must use App Password with 2FA ON to fix `535` error
+2.  *Rotate keys* if you leaked them: MongoDB, Telegram, Gmail
+3.  *Gmail*: Must use App Password with 2FA ON to fix `535` error
 4.  *Change `ADMIN_KEY`* to something strong before going live
 
 ---
@@ -92,9 +88,6 @@ Method	Endpoint	Description
 ### *📞 SUPPORT*
 Made with ❤️ for TEDDY-XMD Community  
 Owner: @xdbot1  
-Channel: https://whatsapp.com/channel/0029Vb6NveDBPzjPa4vIRt3n
-
-For bugs, open an issue or submit ticket at `/`
-
----
+WhatsApp Channel: https://whatsapp.com/channel/0029Vb6NveDBPzjPa4vIRt3n  
+Telegram Channel: https://t.me/free_net_zone
 
