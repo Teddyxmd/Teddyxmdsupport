@@ -6,13 +6,13 @@ Official AI-powered support ticket system for **TEDDY-XMD WhatsApp Bot**.
 
 Features: Email + Telegram Alerts + Admin Panel + MongoDB
 
-[Status](https://img.shields.io/badge/status-Production-25D366)
-[Node](https://img.shields.io/badge/Node-18+-0078D4)
+![Status](https://img.shields.io/badge/status-Production-25D366)
+![Node](https://img.shields.io/badge/Node-18+-0078D4)
 
 ---
 
 ### **🎬 PREVIEW**
-[TEDDY-XMD Support Panel](https://files.catbox.moe/5ffdce.jpeg)
+![TEDDY-XMD Support Panel](https://files.catbox.moe/5ffdce.jpeg)
 
 ---
 
@@ -21,10 +21,10 @@ Features: Email + Telegram Alerts + Admin Panel + MongoDB
 Deploy instantly. No coding needed.
 
 #### Deploy to Render
-[[Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Teddyxmd/teddyxmdsupport)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Teddyxmd/teddyxmdsupport)
 
 #### Deploy to Heroku
-[[Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/Teddyxmd/teddyxmdsupport)
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/Teddyxmd/teddyxmdsupport)
 
 *After clicking, fill 5 required env vars: `MONGO_URI, BOT_TOKEN, ADMIN_IDS, OUTLOOK_EMAIL, OUTLOOK_PASS`. `ADMIN_KEY` is auto-generated.*
 
@@ -115,4 +115,9 @@ For bugs or feature requests, open an [Issue](https://github.com/Teddyxmd/teddyx
 
 ### *📜 LICENSE*
 MIT © TEDDY-XMD
+
+### **What was fixed**
+1.  `![Status]` and `![Node]` badges now have `!`
+2.  `[![Deploy to Render]]` and `[![Deploy]]` buttons now have `!`
+3.  `![TEDDY-XMD Support Panel]` preview image now has `!`
 
