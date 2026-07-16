@@ -22,7 +22,7 @@ const CONFIG = {
     OUTLOOK_PASS: process.env.OUTLOOK_PASS,
 };
 
-// DB Connection
+// DB
 let cached = global.mongoose;
 if (!cached) cached = global.mongoose = { conn: null, promise: null };
 async function dbConnect() {
@@ -32,15 +32,14 @@ async function dbConnect() {
     return cached.conn;
 }
 
-// Schema
 const ticketSchema = new mongoose.Schema({
     ticketID: {type: String, unique: true}, name: String, email: String, message: String,
-    aiReply: String, status: { type: String, default: 'Open', enum: ['Open','Closed'] },
+    status: { type: String, default: 'Open', enum: ['Open','Closed'] },
     ip: String, createdAt: { type: Date, default: Date.now }
 });
 const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', ticketSchema);
 
-// Email Transport
+// Email
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: CONFIG.OUTLOOK_EMAIL, pass: CONFIG.OUTLOOK_PASS },
@@ -52,30 +51,11 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
-// GIFTED API - EXACTLY LIKE THE TEST ABOVE
-async function generateAIReply(name, userMessage, ticketID) {
-    try {
-        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences max. Be helpful and professional. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
-
-        const response = await axios.post('https://api.giftedtech.co.ke/api/ai/openai', {
-            apikey: "gifted",
-            question: prompt
-        }, { timeout: 15000 });
-
-        if(response.data.status === 200 && response.data.result){
-            console.log("✅ GIFTED RESPONSE:", response.data.result);
-            return response.data.result;
-        }
-        throw new Error("Invalid Gifted Response");
-
-    } catch (e) {
-        console.error("❌ GIFTED ERROR:", e.response?.status, e.response?.data || e.message);
-        // Fallback reply
-        return `Hi ${name},\n\nThank you for contacting ${CONFIG.COMPANY_NAME}. Your ticket ${ticketID} has been received.\n\nWe have noted: "${userMessage}"\nOur support team will get back to you within 24 hours.\n\n${CONFIG.COMPANY_NAME} Support Team`;
-    }
+// CUSTOM STATIC REPLY - NO API CALLS
+function generateCustomReply(name, ticketID) {
+    return `Hello ${name},\n\nWe've received your support ticket ${ticketID}.\n\nThank you for contacting ${CONFIG.COMPANY_NAME}. Our support team will review your message and you'll get your response within 24 hours.\n\nPlease keep this ticket ID for reference.\n\nBest regards,\n${CONFIG.COMPANY_NAME} Support Team`;
 }
 
-// Routes
 app.post('/api/support', async (req, res) => {
     await dbConnect();
     const { name, email, message } = req.body;
@@ -83,8 +63,9 @@ app.post('/api/support', async (req, res) => {
     try {
         const ticketID = await generateTicketID();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        const aiReply = await generateAIReply(name, message, ticketID);
-        await new Ticket({ ticketID, name, email, message, aiReply, ip }).save();
+        const aiReply = generateCustomReply(name, ticketID); // STATIC REPLY
+        
+        await new Ticket({ ticketID, name, email, message, ip }).save();
 
         // SEND EMAIL
         try {
@@ -92,13 +73,26 @@ app.post('/api/support', async (req, res) => {
                 from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
                 to: email,
                 subject: `[${ticketID}] We received your message`,
-                html: `<div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5"><div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4"><h2 style="color:#0078D4">Hi ${name},</h2><p><b>Ticket ID: ${ticketID}</b></p><p>Thanks for contacting <b>${CONFIG.COMPANY_NAME}</b>!</p><div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">${aiReply.replace(/\n/g, '<br>')}</div><p>Reply to this email and include ${ticketID} to continue.</p><hr><p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME}</p></div></div>`
+                html: `
+                <div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5">
+                    <div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4">
+                        <h2 style="color:#0078D4">Hi ${name},</h2>
+                        <p><b>Ticket ID: ${ticketID}</b></p>
+                        <p>We've received your support ticket.</p>
+                        <div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">
+                            ${aiReply.replace(/\n/g, '<br>')}
+                        </div>
+                        <p><b>Your Message:</b><br>${message}</p>
+                        <hr>
+                        <p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME} | Reply to this email with your ticket ID to continue</p>
+                    </div>
+                </div>`
             });
             console.log("✅ EMAIL SENT TO:", email);
         } catch(e) { console.error("❌ EMAIL FAILED:", e.message); }
 
         // SEND TELEGRAM
-        const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n*AI Reply:*\n${aiReply}`;
+        const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n_Status: Open_`;
         for(let chatId of CONFIG.ADMIN_IDS){
             try {
                 await axios.post(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/sendMessage`, {
@@ -127,12 +121,10 @@ app.get('/admin', async (req, res) => {
     await dbConnect();
     if(req.query.key !== CONFIG.ADMIN_KEY) return res.status(403).send('<h1 style="font-family:Poppins;text-align:center;margin-top:50px">403 Forbidden</h1>');
     const tickets = await Ticket.find().sort({ createdAt: -1 }).limit(200);
-    res.send(`<!DOCTYPE html><html><head><title>Admin - ${CONFIG.COMPANY_NAME}</title><style>body{font-family:Poppins;background:#0a0a0a;color:#fff;padding:20px}h1{color:#0078D4}table{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden}th,td{padding:12px;border-bottom:1px solid #222;text-align:left}th{background:#0078D4}button{cursor:pointer;padding:6px 12px;border:none;border-radius:5px;background:#0078D4;color:#fff}.btn-close{background:#ff4444}.status{padding:4px 10px;border-radius:5px;font-size:12px}.open{background:#0078D4}.closed{background:#25D366}</style></head><body><h1>📊 ${CONFIG.COMPANY_NAME} - Admin</h1><div>Total Tickets: ${tickets.length}</div><br><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Details</th><th>Time</th><th>Status</th><th>Action</th></tr>${tickets.map(t=>`<tr id="row-${t.ticketID}"><td><b>${t.ticketID}</b></td><td>${t.name}</td><td>${t.email}</td><td><button onclick="showMsg('${t.ticketID}')">View</button></td><td>${new Date(t.createdAt).toLocaleString('en-GB')}</td><td id="status-${t.ticketID}"><span class="status ${t.status.toLowerCase()}">${t.status}</span></td><td>${t.status === 'Open' ? `<button class="btn-close" onclick="closeTicket('${t.ticketID}')">Close</button>` : '-'}</td></tr><tr id="msg-${t.ticketID}" style="display:none;background:#1a1a1a"><td colspan="7"><b>Customer:</b><br>${t.message}<br><br><b>AI:</b><br>${t.aiReply}</td></tr>`).join('') || '<tr><td colspan=7>No tickets yet</td></tr>'}</table><script>const ADMIN_KEY='${CONFIG.ADMIN_KEY}';function showMsg(id){const el=document.getElementById('msg-'+id);el.style.display=el.style.display==='none'?'table-row':'none';}async function closeTicket(id){if(!confirm('Close '+id+'?'))return;await fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticketID:id,key:ADMIN_KEY})});document.getElementById('status-'+id).innerHTML='<span class="status closed">Closed</span>';document.getElementById('row-'+id).querySelector('td:last-child').innerHTML='-';}</script></body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Admin - ${CONFIG.COMPANY_NAME}</title><style>body{font-family:Poppins;background:#0a0a0a;color:#fff;padding:20px}h1{color:#0078D4}table{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden}th,td{padding:12px;border-bottom:1px solid #222;text-align:left}th{background:#0078D4}button{cursor:pointer;padding:6px 12px;border:none;border-radius:5px;background:#0078D4;color:#fff}.btn-close{background:#ff4444}.status{padding:4px 10px;border-radius:5px;font-size:12px}.open{background:#0078D4}.closed{background:#25D366}</style></head><body><h1>📊 ${CONFIG.COMPANY_NAME} - Admin</h1><div>Total Tickets: ${tickets.length}</div><br><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Details</th><th>Time</th><th>Status</th><th>Action</th></tr>${tickets.map(t=>`<tr id="row-${t.ticketID}"><td><b>${t.ticketID}</b></td><td>${t.name}</td><td>${t.email}</td><td><button onclick="showMsg('${t.ticketID}')">View</button></td><td>${new Date(t.createdAt).toLocaleString('en-GB')}</td><td id="status-${t.ticketID}"><span class="status ${t.status.toLowerCase()}">${t.status}</span></td><td>${t.status === 'Open' ? `<button class="btn-close" onclick="closeTicket('${t.ticketID}')">Close</button>` : '-'}</td></tr><tr id="msg-${t.ticketID}" style="display:none;background:#1a1a1a"><td colspan="7"><b>Customer Message:</b><br>${t.message}</td></tr>`).join('') || '<tr><td colspan=7>No tickets yet</td></tr>'}</table><script>const ADMIN_KEY='${CONFIG.ADMIN_KEY}';function showMsg(id){const el=document.getElementById('msg-'+id);el.style.display=el.style.display==='none'?'table-row':'none';}async function closeTicket(id){if(!confirm('Close '+id+'?'))return;await fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticketID:id,key:ADMIN_KEY})});document.getElementById('status-'+id).innerHTML='<span class="status closed">Closed</span>';document.getElementById('row-'+id).querySelector('td:last-child').innerHTML='-';}</script></body></html>`);
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'support.html')));
-
 const PORT = process.env.PORT || 50900;
 app.listen(PORT, () => console.log(`✅ TEDDY-XMD Support LIVE on ${PORT}`));
-
 module.exports = app;
