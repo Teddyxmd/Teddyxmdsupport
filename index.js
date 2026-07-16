@@ -18,9 +18,9 @@ const CONFIG = {
     MONGO_URI: process.env.MONGO_URI,
     BOT_TOKEN: process.env.BOT_TOKEN,
     ADMIN_IDS: process.env.ADMIN_IDS? process.env.ADMIN_IDS.split(',') : [],
-    OUTLOOK_EMAIL: process.env.OUTLOOK_EMAIL, // USE GMAIL HERE
+    OUTLOOK_EMAIL: process.env.OUTLOOK_EMAIL, // USE GMAIL
     OUTLOOK_PASS: process.env.OUTLOOK_PASS, // GMAIL APP PASSWORD
-    AI_API_URL: 'https://api.deline.web.id/ai/openai', // YOUR NEW AI
+    AI_API_URL: 'https://api.deline.web.id/ai/openai',
 };
 
 let cached = global.mongoose;
@@ -41,7 +41,6 @@ const ticketSchema = new mongoose.Schema({
 });
 const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', ticketSchema);
 
-// FIX: Gmail works on Render
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: CONFIG.OUTLOOK_EMAIL, pass: CONFIG.OUTLOOK_PASS },
@@ -53,21 +52,26 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
-// NEW: Use your custom AI API instead of Gemini
+// FIXED: No API key, handles plain text + json responses
 async function generateAIReply(name, userMessage, ticketID) {
     try {
-        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}.
-        Ticket ID: ${ticketID}. Reply in 3-4 sentences. Be helpful, kind, and professional. Always mention ticket ID.
-        Customer Name: ${name}, Message: "${userMessage}". Sign off as ${CONFIG.COMPANY_NAME} Support Team.`;
+        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences. Be helpful. Mention ticket ID. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
 
         const response = await axios.post(CONFIG.AI_API_URL, {
-            messages: [{ role: "user", content: prompt }],
-            model: "gpt-3.5-turbo" // or whatever model your API uses
-        }, { timeout: 10000 });
+            prompt: prompt, // Some APIs use "prompt" instead of "messages"
+            message: prompt, // Try this too
+            query: prompt // Try this too
+        }, { timeout: 15000 });
 
-        return response.data.choices[0].message.content || response.data.reply || "Thanks for your message!";
+        console.log("AI API RAW RESPONSE:", response.data);
+
+        // Try all possible response formats
+        const data = response.data;
+        if(typeof data === 'string') return data;
+        return data.choices?.[0]?.message?.content || data.reply || data.result || data.response || data.text || data.answer || "Thanks for contacting us!";
+
     } catch (e) {
-        console.error("AI API Error:", e.message);
+        console.error("AI API ERROR:", e.response?.status, e.response?.data || e.message);
         return `Hi ${name},\n\nThanks for contacting ${CONFIG.COMPANY_NAME}! Your ticket ${ticketID} has been received. We will review "${userMessage}" and get back to you within 24 hours.\n\n${CONFIG.COMPANY_NAME} Support Team`;
     }
 }
@@ -76,7 +80,6 @@ app.get('/health', (req, res) => res.status(200).json({status: 'OK', service: 'T
 
 app.post('/api/support', async (req, res) => {
     await dbConnect();
-    console.log("RECEIVED BODY:", req.body);
     const { name, email, message } = req.body;
     if(!name ||!email ||!message) return res.status(400).json({success: false, error: `All fields required`});
     try {
@@ -85,7 +88,6 @@ app.post('/api/support', async (req, res) => {
         const aiReply = await generateAIReply(name, message, ticketID);
         await new Ticket({ ticketID, name, email, message, aiReply, ip }).save();
 
-        // Send email in background
         setTimeout(() => {
             transporter.sendMail({
                 from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
