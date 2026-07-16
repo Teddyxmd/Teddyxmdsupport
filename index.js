@@ -17,10 +17,9 @@ const CONFIG = {
     ADMIN_KEY: process.env.ADMIN_KEY,
     MONGO_URI: process.env.MONGO_URI,
     BOT_TOKEN: process.env.BOT_TOKEN,
-    ADMIN_IDS: process.env.ADMIN_IDS? process.env.ADMIN_IDS.split(',') : [],
+    ADMIN_IDS: process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',') : [],
     OUTLOOK_EMAIL: process.env.OUTLOOK_EMAIL, // USE GMAIL
     OUTLOOK_PASS: process.env.OUTLOOK_PASS, // GMAIL APP PASSWORD
-    AI_API_URL: 'https://api.deline.web.id/ai/openai',
 };
 
 let cached = global.mongoose;
@@ -52,36 +51,30 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
-// FIXED: No API key, handles plain text + json responses
+// GIFTED API HARDCODED - NO ENV
 async function generateAIReply(name, userMessage, ticketID) {
     try {
-        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences. Be helpful. Mention ticket ID. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
+        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences. Be helpful and professional. Always mention ticket ID. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
 
-        const response = await axios.post(CONFIG.AI_API_URL, {
-            prompt: prompt, // Some APIs use "prompt" instead of "messages"
-            message: prompt, // Try this too
-            query: prompt // Try this too
-        }, { timeout: 15000 });
+        const url = `https://api.giftedtech.co.ke/api/ai/openai?apikey=gifted&q=${encodeURIComponent(prompt)}`;
+        
+        const response = await axios.get(url, { timeout: 20000 });
 
-        console.log("AI API RAW RESPONSE:", response.data);
-
-        // Try all possible response formats
-        const data = response.data;
-        if(typeof data === 'string') return data;
-        return data.choices?.[0]?.message?.content || data.reply || data.result || data.response || data.text || data.answer || "Thanks for contacting us!";
+        console.log("GIFTED RESPONSE:", response.data);
+        return response.data.result || response.data.reply || "Thanks for contacting us!";
 
     } catch (e) {
-        console.error("AI API ERROR:", e.response?.status, e.response?.data || e.message);
+        console.error("GIFTED API ERROR:", e.response?.status, e.response?.data || e.message);
         return `Hi ${name},\n\nThanks for contacting ${CONFIG.COMPANY_NAME}! Your ticket ${ticketID} has been received. We will review "${userMessage}" and get back to you within 24 hours.\n\n${CONFIG.COMPANY_NAME} Support Team`;
     }
 }
 
-app.get('/health', (req, res) => res.status(200).json({status: 'OK', service: 'TEDDY-XMD Support'}));
+app.get('/health', (req, res) => res.status(200).json({status: 'OK'}));
 
 app.post('/api/support', async (req, res) => {
     await dbConnect();
     const { name, email, message } = req.body;
-    if(!name ||!email ||!message) return res.status(400).json({success: false, error: `All fields required`});
+    if(!name || !email || !message) return res.status(400).json({success: false, error: `All fields required`});
     try {
         const ticketID = await generateTicketID();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -113,16 +106,16 @@ app.post('/api/support', async (req, res) => {
 app.post('/api/close-ticket', async (req, res) => {
     await dbConnect();
     const { ticketID, key } = req.body;
-    if(key!== CONFIG.ADMIN_KEY) return res.status(401).json({success: false, error: 'Unauthorized'});
+    if(key !== CONFIG.ADMIN_KEY) return res.status(401).json({success: false, error: 'Unauthorized'});
     await Ticket.updateOne({ ticketID }, { status: 'Closed' });
     res.json({success: true});
 });
 
 app.get('/admin', async (req, res) => {
     await dbConnect();
-    if(req.query.key!== CONFIG.ADMIN_KEY) return res.status(403).send('<h1 style="font-family:Poppins;text-align:center;margin-top:50px">403 Forbidden</h1>');
+    if(req.query.key !== CONFIG.ADMIN_KEY) return res.status(403).send('<h1 style="font-family:Poppins;text-align:center;margin-top:50px">403 Forbidden</h1>');
     const tickets = await Ticket.find().sort({ createdAt: -1 }).limit(200);
-    res.send(`<!DOCTYPE html><html><head><title>Admin - ${CONFIG.COMPANY_NAME}</title><style>body{font-family:Poppins;background:#0a0a0a;color:#fff;padding:20px}h1{color:#0078D4}table{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden}th,td{padding:12px;border-bottom:1px solid #222;text-align:left}th{background:#0078D4}button{cursor:pointer;padding:6px 12px;border:none;border-radius:5px;background:#0078D4;color:#fff}.btn-close{background:#ff4444}.status{padding:4px 10px;border-radius:5px;font-size:12px}.open{background:#0078D4}.closed{background:#25D366}</style></head><body><h1>📊 ${CONFIG.COMPANY_NAME} - Admin</h1><div>Total Tickets: ${tickets.length}</div><br><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Details</th><th>Time</th><th>Status</th><th>Action</th></tr>${tickets.map(t=>`<tr id="row-${t.ticketID}"><td><b>${t.ticketID}</b></td><td>${t.name}</td><td>${t.email}</td><td><button onclick="showMsg('${t.ticketID}')">View</button></td><td>${new Date(t.createdAt).toLocaleString('en-GB')}</td><td id="status-${t.ticketID}"><span class="status ${t.status.toLowerCase()}">${t.status}</span></td><td>${t.status === 'Open'? `<button class="btn-close" onclick="closeTicket('${t.ticketID}')">Close</button>` : '-'}</td></tr><tr id="msg-${t.ticketID}" style="display:none;background:#1a1a1a"><td colspan="7"><b>Customer:</b><br>${t.message}<br><br><b>AI:</b><br>${t.aiReply}</td></tr>`).join('') || '<tr><td colspan=7>No tickets yet</td></tr>'}</table><script>const ADMIN_KEY='${CONFIG.ADMIN_KEY}';function showMsg(id){const el=document.getElementById('msg-'+id);el.style.display=el.style.display==='none'?'table-row':'none';}async function closeTicket(id){if(!confirm('Close '+id+'?'))return;await fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticketID:id,key:ADMIN_KEY})});document.getElementById('status-'+id).innerHTML='<span class="status closed">Closed</span>';document.getElementById('row-'+id).querySelector('td:last-child').innerHTML='-';}</script></body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Admin - ${CONFIG.COMPANY_NAME}</title><style>body{font-family:Poppins;background:#0a0a0a;color:#fff;padding:20px}h1{color:#0078D4}table{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden}th,td{padding:12px;border-bottom:1px solid #222;text-align:left}th{background:#0078D4}button{cursor:pointer;padding:6px 12px;border:none;border-radius:5px;background:#0078D4;color:#fff}.btn-close{background:#ff4444}.status{padding:4px 10px;border-radius:5px;font-size:12px}.open{background:#0078D4}.closed{background:#25D366}</style></head><body><h1>📊 ${CONFIG.COMPANY_NAME} - Admin</h1><div>Total Tickets: ${tickets.length}</div><br><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Details</th><th>Time</th><th>Status</th><th>Action</th></tr>${tickets.map(t=>`<tr id="row-${t.ticketID}"><td><b>${t.ticketID}</b></td><td>${t.name}</td><td>${t.email}</td><td><button onclick="showMsg('${t.ticketID}')">View</button></td><td>${new Date(t.createdAt).toLocaleString('en-GB')}</td><td id="status-${t.ticketID}"><span class="status ${t.status.toLowerCase()}">${t.status}</span></td><td>${t.status === 'Open' ? `<button class="btn-close" onclick="closeTicket('${t.ticketID}')">Close</button>` : '-'}</td></tr><tr id="msg-${t.ticketID}" style="display:none;background:#1a1a1a"><td colspan="7"><b>Customer:</b><br>${t.message}<br><br><b>AI:</b><br>${t.aiReply}</td></tr>`).join('') || '<tr><td colspan=7>No tickets yet</td></tr>'}</table><script>const ADMIN_KEY='${CONFIG.ADMIN_KEY}';function showMsg(id){const el=document.getElementById('msg-'+id);el.style.display=el.style.display==='none'?'table-row':'none';}async function closeTicket(id){if(!confirm('Close '+id+'?'))return;await fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticketID:id,key:ADMIN_KEY})});document.getElementById('status-'+id).innerHTML='<span class="status closed">Closed</span>';document.getElementById('row-'+id).querySelector('td:last-child').innerHTML='-';}</script></body></html>`);
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'support.html')));
