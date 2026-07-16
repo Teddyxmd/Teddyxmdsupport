@@ -13,7 +13,9 @@
     "express",
     "mongodb",
     "telegram",
-    "nodemailer"
+    "nodemailer",
+    "heroku",
+    "render"
   ],
   "author": "TEDDY-XMD",
   "license": "MIT",
