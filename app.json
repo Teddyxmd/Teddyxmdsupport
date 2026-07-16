@@ -1,0 +1,51 @@
+{
+  "name": "TEDDY-XMD Support",
+  "description": "Official AI-powered support ticket system for TEDDY-XMD WhatsApp Bot. Features: Email + Telegram Alerts + Admin Panel + MongoDB",
+  "repository": "https://github.com/Teddyxmd/teddyxmdsupport",
+  "keywords": ["support", "ticket", "express", "mongodb", "telegram", "nodemailer"],
+  "logo": "https://i.imgur.com/25D366.png",
+  "success_url": "/",
+  "env": {
+    "NODE_ENV": {
+      "description": "Environment",
+      "value": "production"
+    },
+    "PORT": {
+      "description": "Port for the app",
+      "value": "50900"
+    },
+    "COMPANY_NAME": {
+      "description": "Your company name",
+      "value": "TEDDY-XMD Support"
+    },
+    "ADMIN_KEY": {
+      "description": "Secret key to access admin panel",
+      "generator": "secret"
+    },
+    "MONGO_URI": {
+      "description": "MongoDB Atlas connection string",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "ADMIN_IDS": {
+      "description": "Comma separated Telegram Chat IDs to receive alerts",
+      "required": true
+    },
+    "OUTLOOK_EMAIL": {
+      "description": "Gmail address for sending emails",
+      "required": true
+    },
+    "OUTLOOK_PASS": {
+      "description": "Gmail App Password, not normal password",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+}
