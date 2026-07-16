@@ -26,9 +26,7 @@ let cached = global.mongoose;
 if (!cached) cached = global.mongoose = { conn: null, promise: null };
 async function dbConnect() {
     if (cached.conn) return cached.conn;
-    if (!cached.promise) cached.promise = mongoose.connect(CONFIG.MONGO_URI, {
-        bufferCommands: false,
-    }).then(m => m);
+    if (!cached.promise) cached.promise = mongoose.connect(CONFIG.MONGO_URI, {bufferCommands: false}).then(m => m);
     cached.conn = await cached.promise;
     return cached.conn;
 }
@@ -51,16 +49,26 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
+// 3 FALLBACKS: Gifted -> Deline -> Static
 async function generateAIReply(name, userMessage, ticketID) {
+    const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences. Be helpful. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
+    
+    // 1. TRY GIFTED
     try {
-        const prompt = `You are a professional support agent for ${CONFIG.COMPANY_NAME}. Ticket ID: ${ticketID}. Reply in 3 sentences. Be helpful. Customer: ${name}, Message: "${userMessage}". Sign as ${CONFIG.COMPANY_NAME} Support Team.`;
         const url = `https://api.giftedtech.co.ke/api/ai/openai?apikey=gifted&q=${encodeURIComponent(prompt)}`;
-        const response = await axios.get(url, { timeout: 20000 });
-        return response.data.result || "Thanks for contacting us!";
-    } catch (e) {
-        console.error("GIFTED API ERROR:", e.message);
-        return `Hi ${name},\n\nThanks for contacting ${CONFIG.COMPANY_NAME}! Your ticket ${ticketID} has been received. We will review "${userMessage}" and get back to you within 24 hours.\n\n${CONFIG.COMPANY_NAME} Support Team`;
-    }
+        const res = await axios.get(url, { timeout: 8000 });
+        if(res.data.result) { console.log("✅ AI: Gifted"); return res.data.result; }
+    } catch(e) { console.error("❌ Gifted failed:", e.message); }
+    
+    // 2. TRY DELINE
+    try {
+        const res = await axios.post('https://api.deline.web.id/ai/openai', { prompt: prompt }, { timeout: 8000 });
+        if(res.data.result || res.data.text) { console.log("✅ AI: Deline"); return res.data.result || res.data.text; }
+    } catch(e) { console.error("❌ Deline failed:", e.message); }
+
+    // 3. STATIC FALLBACK - ALWAYS WORKS
+    console.log("⚠️ AI: Using Static Fallback");
+    return `Hi ${name},\n\nThank you for contacting ${CONFIG.COMPANY_NAME}. Your ticket ${ticketID} has been received successfully.\n\nWe have noted: "${userMessage}"\nOur support team will review this and get back to you within 24 hours.\n\n${CONFIG.COMPANY_NAME} Support Team`;
 }
 
 app.post('/api/support', async (req, res) => {
@@ -73,7 +81,7 @@ app.post('/api/support', async (req, res) => {
         const aiReply = await generateAIReply(name, message, ticketID);
         await new Ticket({ ticketID, name, email, message, aiReply, ip }).save();
 
-        // SEND EMAIL WITH LOGS
+        // EMAIL
         try {
             await transporter.sendMail({
                 from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
@@ -82,11 +90,9 @@ app.post('/api/support', async (req, res) => {
                 html: `<div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5"><div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4"><h2 style="color:#0078D4">Hi ${name},</h2><p><b>Ticket ID: ${ticketID}</b></p><p>Thanks for contacting <b>${CONFIG.COMPANY_NAME}</b>!</p><div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">${aiReply.replace(/\n/g, '<br>')}</div><p>Reply to this email and include ${ticketID} to continue.</p><hr><p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME}</p></div></div>`
             });
             console.log("✅ EMAIL SENT TO:", email);
-        } catch(e) {
-            console.error("❌ EMAIL FAILED:", e.message);
-        }
+        } catch(e) { console.error("❌ EMAIL FAILED:", e.message); }
 
-        // SEND TELEGRAM WITH LOGS
+        // TELEGRAM
         const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n*AI Reply:*\n${aiReply}`;
         for(let chatId of CONFIG.ADMIN_IDS){
             try {
@@ -94,9 +100,7 @@ app.post('/api/support', async (req, res) => {
                     chat_id: chatId.trim(), text: adminText, parse_mode: 'Markdown'
                 });
                 console.log("✅ TELEGRAM SENT TO:", chatId);
-            } catch(e) {
-                console.error("❌ TELEGRAM FAILED:", chatId, e.response?.data || e.message);
-            }
+            } catch(e) { console.error("❌ TELEGRAM FAILED:", chatId, e.response?.data || e.message); }
         }
         
         res.json({success: true, ticketID, aiReply});
@@ -106,10 +110,22 @@ app.post('/api/support', async (req, res) => {
     }
 });
 
-// ... keep your /admin and /api/close-ticket routes same as before ...
+app.post('/api/close-ticket', async (req, res) => {
+    await dbConnect();
+    const { ticketID, key } = req.body;
+    if(key !== CONFIG.ADMIN_KEY) return res.status(401).json({success: false, error: 'Unauthorized'});
+    await Ticket.updateOne({ ticketID }, { status: 'Closed' });
+    res.json({success: true});
+});
+
+app.get('/admin', async (req, res) => {
+    await dbConnect();
+    if(req.query.key !== CONFIG.ADMIN_KEY) return res.status(403).send('<h1 style="font-family:Poppins;text-align:center;margin-top:50px">403 Forbidden</h1>');
+    const tickets = await Ticket.find().sort({ createdAt: -1 }).limit(200);
+    res.send(`<!DOCTYPE html><html><head><title>Admin - ${CONFIG.COMPANY_NAME}</title><style>body{font-family:Poppins;background:#0a0a0a;color:#fff;padding:20px}h1{color:#0078D4}table{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden}th,td{padding:12px;border-bottom:1px solid #222;text-align:left}th{background:#0078D4}button{cursor:pointer;padding:6px 12px;border:none;border-radius:5px;background:#0078D4;color:#fff}.btn-close{background:#ff4444}.status{padding:4px 10px;border-radius:5px;font-size:12px}.open{background:#0078D4}.closed{background:#25D366}</style></head><body><h1>📊 ${CONFIG.COMPANY_NAME} - Admin</h1><div>Total Tickets: ${tickets.length}</div><br><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Details</th><th>Time</th><th>Status</th><th>Action</th></tr>${tickets.map(t=>`<tr id="row-${t.ticketID}"><td><b>${t.ticketID}</b></td><td>${t.name}</td><td>${t.email}</td><td><button onclick="showMsg('${t.ticketID}')">View</button></td><td>${new Date(t.createdAt).toLocaleString('en-GB')}</td><td id="status-${t.ticketID}"><span class="status ${t.status.toLowerCase()}">${t.status}</span></td><td>${t.status === 'Open' ? `<button class="btn-close" onclick="closeTicket('${t.ticketID}')">Close</button>` : '-'}</td></tr><tr id="msg-${t.ticketID}" style="display:none;background:#1a1a1a"><td colspan="7"><b>Customer:</b><br>${t.message}<br><br><b>AI:</b><br>${t.aiReply}</td></tr>`).join('') || '<tr><td colspan=7>No tickets yet</td></tr>'}</table><script>const ADMIN_KEY='${CONFIG.ADMIN_KEY}';function showMsg(id){const el=document.getElementById('msg-'+id);el.style.display=el.style.display==='none'?'table-row':'none';}async function closeTicket(id){if(!confirm('Close '+id+'?'))return;await fetch('/api/close-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticketID:id,key:ADMIN_KEY})});document.getElementById('status-'+id).innerHTML='<span class="status closed">Closed</span>';document.getElementById('row-'+id).querySelector('td:last-child').innerHTML='-';}</script></body></html>`);
+});
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'support.html')));
-
 const PORT = process.env.PORT || 50900;
 app.listen(PORT, () => console.log(`✅ TEDDY-XMD Support LIVE on ${PORT}`));
 module.exports = app;
