@@ -39,7 +39,6 @@ const ticketSchema = new mongoose.Schema({
 });
 const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', ticketSchema);
 
-// Email
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: CONFIG.OUTLOOK_EMAIL, pass: CONFIG.OUTLOOK_PASS },
@@ -51,61 +50,62 @@ async function generateTicketID() {
     return `TKT-${String(count + 1).padStart(5, '0')}`;
 }
 
-// CUSTOM STATIC REPLY - NO API CALLS
 function generateCustomReply(name, ticketID) {
-    return `Hello ${name},\n\nWe've received your support ticket ${ticketID}.\n\nThank you for contacting ${CONFIG.COMPANY_NAME}. Our support team will review your message and you'll get your response within 24 hours.\n\nPlease keep this ticket ID for reference.\n\nBest regards,\n${CONFIG.COMPANY_NAME} Support Team`;
+    return `Hello ${name},\n\nWe've received your support ticket ${ticketID}.\n\nThank you for contacting ${CONFIG.COMPANY_NAME}. Our support team will review your message and you'll get your response within 24 hours.\n\nBest regards,\n${CONFIG.COMPANY_NAME} Support Team`;
+}
+
+// FIRE AND FORGET FUNCTIONS - NEVER BLOCK
+async function sendEmail(email, name, ticketID, reply) {
+    try {
+        if(!CONFIG.OUTLOOK_EMAIL || !CONFIG.OUTLOOK_PASS) return console.log("⚠️ EMAIL CONFIG MISSING");
+        await transporter.sendMail({
+            from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
+            to: email, subject: `[${ticketID}] We received your message`,
+            html: `<div style="font-family:Poppins;padding:20px"><h2>Hi ${name}</h2><p><b>Ticket: ${ticketID}</b></p><p>${reply.replace(/\n/g,'<br>')}</p></div>`
+        });
+        console.log("✅ EMAIL SENT:", email);
+    } catch(e) {
+        console.error("❌ EMAIL FAILED BUT CONTINUING:", e.message);
+    }
+}
+
+async function sendTelegram(ticketID, name, email, message) {
+    try {
+        if(!CONFIG.BOT_TOKEN || CONFIG.ADMIN_IDS.length === 0) return console.log("⚠️ TELEGRAM CONFIG MISSING");
+        const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n_Status: Open_`;
+        for(let chatId of CONFIG.ADMIN_IDS){
+            await axios.post(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/sendMessage`, {
+                chat_id: chatId.trim(), text: adminText, parse_mode: 'Markdown'
+            }, {timeout: 5000});
+            console.log("✅ TELEGRAM SENT:", chatId);
+        }
+    } catch(e) {
+        console.error("❌ TELEGRAM FAILED BUT CONTINUING:", e.message);
+    }
 }
 
 app.post('/api/support', async (req, res) => {
     await dbConnect();
     const { name, email, message } = req.body;
     if(!name || !email || !message) return res.status(400).json({success: false, error: `All fields required`});
+    
     try {
         const ticketID = await generateTicketID();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        const aiReply = generateCustomReply(name, ticketID); // STATIC REPLY
+        const reply = generateCustomReply(name, ticketID);
         
         await new Ticket({ ticketID, name, email, message, ip }).save();
 
-        // SEND EMAIL
-        try {
-            await transporter.sendMail({
-                from: `"${CONFIG.COMPANY_NAME}" <${CONFIG.OUTLOOK_EMAIL}>`,
-                to: email,
-                subject: `[${ticketID}] We received your message`,
-                html: `
-                <div style="font-family:Poppins,Arial;padding:20px;background:#f5f5f5">
-                    <div style="background:#fff;padding:25px;border-radius:15px;max-width:600px;margin:auto;border-top:4px solid #0078D4">
-                        <h2 style="color:#0078D4">Hi ${name},</h2>
-                        <p><b>Ticket ID: ${ticketID}</b></p>
-                        <p>We've received your support ticket.</p>
-                        <div style="background:#f9f9f9;padding:15px;border-left:4px solid #0078D4;margin:15px 0">
-                            ${aiReply.replace(/\n/g, '<br>')}
-                        </div>
-                        <p><b>Your Message:</b><br>${message}</p>
-                        <hr>
-                        <p style="font-size:12px;color:#888">${CONFIG.COMPANY_NAME} | Reply to this email with your ticket ID to continue</p>
-                    </div>
-                </div>`
-            });
-            console.log("✅ EMAIL SENT TO:", email);
-        } catch(e) { console.error("❌ EMAIL FAILED:", e.message); }
+        // 1. RESPOND TO USER IMMEDIATELY
+        res.json({success: true, ticketID, aiReply: reply});
 
-        // SEND TELEGRAM
-        const adminText = `🚨 *NEW TICKET: ${ticketID}* 🚨\n\n👤 *Name:* \`${name}\`\n📧 *Email:* \`${email}\`\n📝 *Message:* ${message}\n\n_Status: Open_`;
-        for(let chatId of CONFIG.ADMIN_IDS){
-            try {
-                await axios.post(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/sendMessage`, {
-                    chat_id: chatId.trim(), text: adminText, parse_mode: 'Markdown'
-                });
-                console.log("✅ TELEGRAM SENT TO:", chatId);
-            } catch(e) { console.error("❌ TELEGRAM FAILED:", chatId, e.response?.data || e.message); }
-        }
-        
-        res.json({success: true, ticketID, aiReply});
+        // 2. RUN EMAIL + TELEGRAM IN BACKGROUND. NO AWAIT. NO CRASH
+        sendEmail(email, name, ticketID, reply);
+        sendTelegram(ticketID, name, email, message);
+
     } catch(e) {
         console.error("SERVER ERROR:", e);
-        res.status(500).json({success: false, error: 'Server Error: ' + e.message});
+        if(!res.headersSent) res.status(500).json({success: false, error: 'Server Error'});
     }
 });
 
